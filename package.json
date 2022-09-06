@@ -1,0 +1,9 @@
+{
+  "name": "battery-simulator",
+  "version": "1.0.0",
+  "description": "Simulating what would happen if we had a home battery for our property.",
+  "main": "index.js",
+  "author": "Robert Massaioli <rmassaioli@atlassian.com>",
+  "license": "MIT",
+  "private": false
+}

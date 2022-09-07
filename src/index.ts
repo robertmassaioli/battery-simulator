@@ -217,7 +217,9 @@ type SimulationResults = {
 };
 
 type AggregateResult = {
+  consumedEnergy: number;
   consumptionCost: number;
+  generatedEnergy: number;
   generationEarnings: number;
 }
 
@@ -229,6 +231,8 @@ type CostResults = {
 function aggregateCosts(monthEntries: Array<MeterEntry>, costSettings: CostSettings): AggregateResult {
   let consumptionCost = 0;
   let generationEarnings = 0;
+  let consumedEnergy = 0;
+  let generatedEnergy = 0;
 
   monthEntries.forEach(entry => {
     for (let hour = 0; hour < 24; hour++) {
@@ -236,6 +240,8 @@ function aggregateCosts(monthEntries: Array<MeterEntry>, costSettings: CostSetti
         const windowIndex = calIndex({ hour, minute });
 
         const timeWindow = entry.timeWindows[windowIndex];
+        consumedEnergy += timeWindow.consumption;
+        generatedEnergy += timeWindow.generation;
         consumptionCost += timeWindow.consumption * costSettings.costPerHour[windowIndex];
         generationEarnings += timeWindow.generation * costSettings.feedInTarif;
       }
@@ -244,7 +250,9 @@ function aggregateCosts(monthEntries: Array<MeterEntry>, costSettings: CostSetti
 
   return {
     consumptionCost,
-    generationEarnings
+    generationEarnings,
+    consumedEnergy,
+    generatedEnergy
   };
 }
 
@@ -268,11 +276,25 @@ function calculateStatistics(meterEntries: Array<MeterEntry>, costSettings: Cost
 function printStatistics(title: string, stats: SimulationResults): void {
   console.log(`## Results: ${title}`);
   console.log('');
+  console.log('Per Month');
   for (const month in stats.cost.perMonth) {
     if (Object.prototype.hasOwnProperty.call(stats.cost.perMonth, month)) {
       const monthCosts = stats.cost.perMonth[month];
-      const costInDollars = (monthCosts.consumptionCost - monthCosts.generationEarnings) / 100.0;
-      console.log(`${month}: $${costInDollars}`);
+      const dollarsConsumed = monthCosts.consumptionCost / 100.0;
+      const dollarsGenerated = monthCosts.generationEarnings / 100.0;
+      const costInDollars = dollarsConsumed - dollarsGenerated;
+      console.log(`${month}: $${costInDollars.toFixed(2)} (${monthCosts.consumedEnergy.toFixed(2)}kWh consumed ($${dollarsConsumed.toFixed(2)}) - ${monthCosts.generatedEnergy.toFixed(2)}kWh generated ($${dollarsGenerated.toFixed(2)}))`);
+    }
+  }
+  console.log('');
+  console.log('Per Year');
+  for (const year in stats.cost.perYear) {
+    if (Object.prototype.hasOwnProperty.call(stats.cost.perYear, year)) {
+      const monthCosts = stats.cost.perYear[year];
+      const dollarsConsumed = monthCosts.consumptionCost / 100.0;
+      const dollarsGenerated = monthCosts.generationEarnings / 100.0;
+      const costInDollars = dollarsConsumed - dollarsGenerated;
+      console.log(`${year}: $${costInDollars.toFixed(2)} (${monthCosts.consumedEnergy.toFixed(2)}kWh consumed ($${dollarsConsumed.toFixed(2)}) - ${monthCosts.generatedEnergy.toFixed(2)}kWh generated ($${dollarsGenerated.toFixed(2)}))`);
     }
   }
   console.log('');
@@ -290,7 +312,7 @@ function printStatsComparison(title: string, higher: SimulationResults, lower: S
 
       const higherDiff = higherCosts.consumptionCost - higherCosts.generationEarnings;
       const lowerDiff = lowerCosts.consumptionCost - lowerCosts.generationEarnings;
-      console.log(`${month}: $${(higherDiff - lowerDiff) / 100.0} savings`);
+      console.log(`${month}: $${((higherDiff - lowerDiff) / 100.0).toFixed(2)} savings`);
     }
   }
   console.log('');
@@ -300,9 +322,9 @@ function printStatsComparison(title: string, higher: SimulationResults, lower: S
       const higherCosts = higher.cost.perYear[year];
       const lowerCosts = lower.cost.perYear[year];
 
-      const higherDiff = higherCosts.consumptionCost - higherCosts.generationEarnings;
-      const lowerDiff = lowerCosts.consumptionCost - lowerCosts.generationEarnings;
-      console.log(`${year}: $${(higherDiff - lowerDiff) / 100.0} savings`);
+      const higherDiff = (higherCosts.consumptionCost - higherCosts.generationEarnings) / 100;
+      const lowerDiff = (lowerCosts.consumptionCost - lowerCosts.generationEarnings) / 100;
+      console.log(`${year}: $${((higherDiff - lowerDiff).toFixed(2))} savings ($${higherDiff.toFixed(2)} - $${lowerDiff.toFixed(2)})`);
     }
   }
   console.log('');

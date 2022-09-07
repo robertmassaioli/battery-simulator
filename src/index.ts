@@ -1,7 +1,7 @@
 import csv from 'csv-parser';
 import fs from 'fs';
 import moment from 'moment';
-import _, { clone, remove } from 'lodash';
+import _, { clone, entries, remove } from 'lodash';
 
 type MeterFlow = 'Generation' | 'Consumption';
 
@@ -9,6 +9,7 @@ type Window = {
   consumption: number;
   generation: number;
   batteryCharge: number;
+  atMaxCharge: boolean;
 }
 
 type TimeWindows = { [time: string]: Window };
@@ -43,7 +44,8 @@ function emptyTimeWindows(): TimeWindows {
       timeWindows[windowIndex] = {
         consumption: 0,
         generation: 0,
-        batteryCharge: 0
+        batteryCharge: 0,
+        atMaxCharge: false
       };
     }
   }
@@ -176,7 +178,8 @@ function simulateEntry(entry: MeterEntry, initialBatteryCharge: number, maxBatte
       result.timeWindows[windowIndex] = {
         consumption: updatedConsumption,
         generation: updatedGeneration,
-        batteryCharge: updatedChargePostCons
+        batteryCharge: updatedChargePostCons,
+        atMaxCharge: updatedChargePostCons >= maxBatterySize - 0.005
       };
     }
   }
@@ -205,15 +208,7 @@ function simulateBattery(meterEntries: Array<MeterEntry>, settings: SimulationSe
 type SimulationResults = {
   cost: CostResults;
 
-  /**
-   * Measured in kWh
-   */
-  totalBatteryOutput: number;
-
-  /**
-   * The count of the number of days in which the battery reached 100% at least once.
-   */
-  timesReachedFullBatteryAtLeastOnceInTheDay: number;
+  battery: BatteryResults;
 };
 
 type AggregateResult = {
@@ -227,6 +222,23 @@ type CostResults = {
   perMonth: { [month: string]: AggregateResult };
   perYear: { [year: string]: AggregateResult };
 };
+
+type BatteryAggregate = {
+  /**
+   * Measured in kWh
+   */
+   totalBatteryOutput: number;
+
+   /**
+    * The count of the number of days in which the battery reached 100% at least once.
+    */
+   timesReachedFullBatteryAtLeastOnceInTheDay: number;
+};
+
+type BatteryResults = {
+  perMonth: { [month: string]: BatteryAggregate },
+  perYear: { [year: string]: BatteryAggregate }
+}
 
 function aggregateCosts(monthEntries: Array<MeterEntry>, costSettings: CostSettings): AggregateResult {
   let consumptionCost = 0;
@@ -256,20 +268,55 @@ function aggregateCosts(monthEntries: Array<MeterEntry>, costSettings: CostSetti
   };
 }
 
+function aggregateBattery(meterEntries: Array<MeterEntry>): BatteryAggregate {
+  let totalBatteryOutput = 0;
+  let timesReachedFullBatteryAtLeastOnceInTheDay = 0;
+  let prevBatteryCharge = 0;
+
+  meterEntries.forEach(entry => {
+    let reachedBatteryFullToday = false;
+    for (let hour = 0; hour < 24; hour++) {
+      for(let minute = 0; minute < 60; minute += 30) {
+        const windowIndex = calIndex({ hour, minute });
+
+        const timeWindow = entry.timeWindows[windowIndex];
+        if (timeWindow.atMaxCharge) {
+          reachedBatteryFullToday = true;
+        }
+        const chargeDelta = timeWindow.batteryCharge - prevBatteryCharge;
+        if (chargeDelta > 0) {
+          totalBatteryOutput += chargeDelta;
+        }
+        prevBatteryCharge = timeWindow.batteryCharge;
+      }
+    }
+    timesReachedFullBatteryAtLeastOnceInTheDay += reachedBatteryFullToday ? 1 : 0;
+  });
+
+  return {
+    totalBatteryOutput,
+    timesReachedFullBatteryAtLeastOnceInTheDay
+  };
+}
+
 function calculateStatistics(meterEntries: Array<MeterEntry>, costSettings: CostSettings): SimulationResults {
   const entriesByMonth = _.groupBy(meterEntries, entry => entry.date.format('YYYY-MM'));
   const perMonth = _.mapValues(entriesByMonth, entries => aggregateCosts(entries, costSettings));
+  const batteryPerMonth = _.mapValues(entriesByMonth, entries => aggregateBattery(entries));
 
   const entriesByYear = _.groupBy(meterEntries, entry => entry.date.format('YYYY'));
   const perYear = _.mapValues(entriesByYear, entries => aggregateCosts(entries, costSettings));
+  const batteryPerYear = _.mapValues(entriesByYear, entries => aggregateBattery(entries));
 
   return {
     cost: {
       perMonth,
       perYear
     },
-    totalBatteryOutput: 0,
-    timesReachedFullBatteryAtLeastOnceInTheDay: 0
+    battery: {
+      perMonth: batteryPerMonth,
+      perYear: batteryPerYear
+    }
   };
 }
 
@@ -279,11 +326,12 @@ function printStatistics(title: string, stats: SimulationResults): void {
   console.log('Per Month');
   for (const month in stats.cost.perMonth) {
     if (Object.prototype.hasOwnProperty.call(stats.cost.perMonth, month)) {
+      const monthBattery = stats.battery.perMonth[month];
       const monthCosts = stats.cost.perMonth[month];
       const dollarsConsumed = monthCosts.consumptionCost / 100.0;
       const dollarsGenerated = monthCosts.generationEarnings / 100.0;
       const costInDollars = dollarsConsumed - dollarsGenerated;
-      console.log(`${month}: $${costInDollars.toFixed(2)} (${monthCosts.consumedEnergy.toFixed(2)}kWh consumed ($${dollarsConsumed.toFixed(2)}) - ${monthCosts.generatedEnergy.toFixed(2)}kWh generated ($${dollarsGenerated.toFixed(2)}))`);
+      console.log(`${month}: $${costInDollars.toFixed(2)} (${monthCosts.consumedEnergy.toFixed(2)}kWh consumed ($${dollarsConsumed.toFixed(2)}) - ${monthCosts.generatedEnergy.toFixed(2)}kWh generated ($${dollarsGenerated.toFixed(2)})) [${monthBattery.timesReachedFullBatteryAtLeastOnceInTheDay} days reached max battery]`);
     }
   }
   console.log('');
@@ -310,9 +358,9 @@ function printStatsComparison(title: string, higher: SimulationResults, lower: S
       const higherCosts = higher.cost.perMonth[month];
       const lowerCosts = lower.cost.perMonth[month];
 
-      const higherDiff = higherCosts.consumptionCost - higherCosts.generationEarnings;
-      const lowerDiff = lowerCosts.consumptionCost - lowerCosts.generationEarnings;
-      console.log(`${month}: $${((higherDiff - lowerDiff) / 100.0).toFixed(2)} savings`);
+      const higherDiff = (higherCosts.consumptionCost - higherCosts.generationEarnings) / 100;
+      const lowerDiff = (lowerCosts.consumptionCost - lowerCosts.generationEarnings) / 100;
+      console.log(`${month}: $${(higherDiff - lowerDiff).toFixed(2)} savings ($${higherDiff.toFixed(2)} - $${lowerDiff.toFixed(2)})`);
     }
   }
   console.log('');
@@ -386,6 +434,8 @@ function main() {
       feedInTarif: STANDARD_FEED_IN_TARIF,
       costPerHour: constantPerHourCost(STANDARD_ENERGY_COST)
     });
+
+    //console.log(JSON.stringify(oneBatteryResults, null, 2));
 
     printStatistics('No Battery', noBatteryStatistics);
     printStatistics('One Battery', oneBatteryStatistics);

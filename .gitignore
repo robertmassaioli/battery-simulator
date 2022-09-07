@@ -1,4 +1,7 @@
 *~
 *.sw[a-p]
+*.csv
 
 /node_modules
+
+*.log

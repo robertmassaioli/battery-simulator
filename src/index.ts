@@ -378,8 +378,30 @@ function printStatsComparison(title: string, higher: SimulationResults, lower: S
   console.log('');
 }
 
-const STANDARD_FEED_IN_TARIF = 4;
-const STANDARD_ENERGY_COST = 25.25;
+const POWERSHOP_FEED_IN_TARIF = 5; // Standard powershop feed-in rate
+const POWERSHOP_ENERGY_COST = 25.25; // Standard powershop energy price
+
+// https://www.energymadeeasy.gov.au/plan?id=RED181320MRE7&postcode=2154
+function getRedSaverPlan(): CostSettings {
+  let costPerHour: CostPerHour = {};
+
+  for (let hour = 0; hour < 24; hour++) {
+    for(let minute = 0; minute < 60; minute += 30) {
+      const windowIndex = calIndex({ hour, minute });
+
+      if (hour >= 16 && hour < 20) {
+        costPerHour[windowIndex] = 34.32;
+      } else {
+        costPerHour[windowIndex] = 22.86;
+      }
+    }
+  }
+
+  return {
+    feedInTarif: 7,
+    costPerHour
+  }
+}
 
 function constantPerHourCost(cost: number): CostPerHour {
   const result: CostPerHour = {};
@@ -422,27 +444,41 @@ function main() {
       batterySize: POWERWALL_SIZE * 2
     });
 
-    const noBatteryStatistics = calculateStatistics(noBatteryResults, {
-      feedInTarif: STANDARD_FEED_IN_TARIF,
-      costPerHour: constantPerHourCost(STANDARD_ENERGY_COST)
+    const powershopNoBatteryStatistics = calculateStatistics(noBatteryResults, {
+      feedInTarif: POWERSHOP_FEED_IN_TARIF,
+      costPerHour: constantPerHourCost(POWERSHOP_ENERGY_COST)
     });
-    const oneBatteryStatistics = calculateStatistics(oneBatteryResults, {
-      feedInTarif: STANDARD_FEED_IN_TARIF,
-      costPerHour: constantPerHourCost(STANDARD_ENERGY_COST)
+    const powershopOneBatteryStatistics = calculateStatistics(oneBatteryResults, {
+      feedInTarif: POWERSHOP_FEED_IN_TARIF,
+      costPerHour: constantPerHourCost(POWERSHOP_ENERGY_COST)
     });
-    const twoBatteryStatistics = calculateStatistics(twoBatteryResults, {
-      feedInTarif: STANDARD_FEED_IN_TARIF,
-      costPerHour: constantPerHourCost(STANDARD_ENERGY_COST)
+    const powershopTwoBatteryStatistics = calculateStatistics(twoBatteryResults, {
+      feedInTarif: POWERSHOP_FEED_IN_TARIF,
+      costPerHour: constantPerHourCost(POWERSHOP_ENERGY_COST)
     });
+
+    const redSaverPlan = getRedSaverPlan();
+    const redSaverNoBatteryStatistics = calculateStatistics(noBatteryResults, redSaverPlan);
+    const redSaverOneBatteryStatistics = calculateStatistics(oneBatteryResults, redSaverPlan);
+    const redSaverTwoBatteryStatistics = calculateStatistics(twoBatteryResults, redSaverPlan);
 
     //console.log(JSON.stringify(oneBatteryResults, null, 2));
 
-    printStatistics('No Battery', noBatteryStatistics);
-    printStatistics('One Battery', oneBatteryStatistics);
-    printStatistics('Two Batteries', twoBatteryStatistics);
-    printStatsComparison('No to One Battery', noBatteryStatistics, oneBatteryStatistics);
-    printStatsComparison('No to Two Battery', noBatteryStatistics, twoBatteryStatistics);
-    printStatsComparison('One to Two Battery', oneBatteryStatistics, twoBatteryStatistics);
+    printStatistics('Powershop No Battery', powershopNoBatteryStatistics);
+    printStatistics('Powershop One Battery', powershopOneBatteryStatistics);
+    printStatistics('Powershop Two Batteries', powershopTwoBatteryStatistics);
+    printStatistics('Red Saver No Battery', redSaverNoBatteryStatistics);
+    printStatistics('Red Saver One Battery', redSaverOneBatteryStatistics);
+    printStatistics('Red Saver Two Batteries', redSaverTwoBatteryStatistics);
+
+    printStatsComparison('Powershop - No to One Battery', powershopNoBatteryStatistics, powershopOneBatteryStatistics);
+    printStatsComparison('Powershop - No to Two Battery', powershopNoBatteryStatistics, powershopTwoBatteryStatistics);
+    printStatsComparison('Powershop - One to Two Battery', powershopOneBatteryStatistics, powershopTwoBatteryStatistics);
+
+    printStatsComparison('Powershop No Battery - Red Saver No Battery', powershopNoBatteryStatistics, redSaverNoBatteryStatistics);
+    printStatsComparison('Powershop No Battery - Red Saver One Battery', powershopNoBatteryStatistics, redSaverOneBatteryStatistics);
+    printStatsComparison('Powershop One Battery - Red Saver One Battery', powershopOneBatteryStatistics, redSaverOneBatteryStatistics);
+    printStatsComparison('Red Saver One Battery - Red Saver Two Battery', redSaverOneBatteryStatistics, redSaverTwoBatteryStatistics);
 
     // Scenarios to simulate
     // No battery (current state)

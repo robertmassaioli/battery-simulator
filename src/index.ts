@@ -171,7 +171,7 @@ function simulateEntry(entry: MeterEntry, initialBatteryCharge: number, maxBatte
       const windowIndex = calIndex({ hour, minute });
 
       const window = result.timeWindows[windowIndex];
-      const {updatedChargePostGen, updatedGeneration } = addGeneration({ currentBatteryCharge, maxBatterySize, generation: window.generation });
+      const { updatedChargePostGen, updatedGeneration } = addGeneration({ currentBatteryCharge, maxBatterySize, generation: window.generation });
       const { updatedChargePostCons, updatedConsumption } = removeConsumption({ currentBatteryCharge: updatedChargePostGen, consumption: window.consumption });
 
       currentBatteryCharge = updatedChargePostCons;
@@ -403,6 +403,38 @@ function getRedSaverPlan(): CostSettings {
   }
 }
 
+// https://www.energymadeeasy.gov.au/plan?id=ALI463712MRE3&postcode=2154
+function getAlintaHomeDealPlan(): CostSettings {
+  let costPerHour: CostPerHour = {};
+
+  for (let hour = 0; hour < 24; hour++) {
+    for(let minute = 0; minute < 60; minute += 30) {
+      const windowIndex = calIndex({ hour, minute });
+
+      const offPeak = 19.53;
+      const shoulder = 29.56;
+      const peak = 34.56;
+
+      if (hour < 7) {
+        costPerHour[windowIndex] = offPeak;
+      } else if (hour < 13) {
+        costPerHour[windowIndex] = shoulder;
+      } else if (hour < 20) {
+        costPerHour[windowIndex] = peak;
+      } else if (hour < 22) {
+        costPerHour[windowIndex] = shoulder;
+      } else {
+        costPerHour[windowIndex] = offPeak;
+      }
+    }
+  }
+
+  return {
+    feedInTarif: 6.7,
+    costPerHour
+  }
+}
+
 function constantPerHourCost(cost: number): CostPerHour {
   const result: CostPerHour = {};
 
@@ -415,6 +447,14 @@ function constantPerHourCost(cost: number): CostPerHour {
   }
 
   return result;
+}
+
+// https://www.energymadeeasy.gov.au/plan?id=ORI431078MRE2&postcode=2154
+function getOriginPlan(): CostSettings {
+  return {
+    feedInTarif: 5,
+    costPerHour: constantPerHourCost(29.24)
+  }
 }
 
 const POWERWALL_SIZE = 13.5;
@@ -462,6 +502,17 @@ function main() {
     const redSaverOneBatteryStatistics = calculateStatistics(oneBatteryResults, redSaverPlan);
     const redSaverTwoBatteryStatistics = calculateStatistics(twoBatteryResults, redSaverPlan);
 
+    const alintaPlan = getAlintaHomeDealPlan();
+    const alintaNoBatteryStatistics = calculateStatistics(noBatteryResults, alintaPlan);
+    const alintaOneBatteryStatistics = calculateStatistics(oneBatteryResults, alintaPlan);
+    const alintaTwoBatteryStatistics = calculateStatistics(twoBatteryResults, alintaPlan);
+
+    const originPlan = getOriginPlan();
+    const originNoBatteryStatistics = calculateStatistics(noBatteryResults, originPlan);
+    const originOneBatteryStatistics = calculateStatistics(oneBatteryResults, originPlan);
+    const originTwoBatteryStatistics = calculateStatistics(twoBatteryResults, originPlan);
+
+
     //console.log(JSON.stringify(oneBatteryResults, null, 2));
 
     printStatistics('Powershop No Battery', powershopNoBatteryStatistics);
@@ -470,6 +521,12 @@ function main() {
     printStatistics('Red Saver No Battery', redSaverNoBatteryStatistics);
     printStatistics('Red Saver One Battery', redSaverOneBatteryStatistics);
     printStatistics('Red Saver Two Batteries', redSaverTwoBatteryStatistics);
+    printStatistics('Alinta HomeDeal No Battery', alintaNoBatteryStatistics);
+    printStatistics('Alinta HomeDeal One Battery', alintaOneBatteryStatistics);
+    printStatistics('Alinta HomeDeal Two Batteries', alintaTwoBatteryStatistics);
+    printStatistics('Origin HomeDeal No Battery', originNoBatteryStatistics);
+    printStatistics('Origin HomeDeal One Battery', originOneBatteryStatistics);
+    printStatistics('Origin HomeDeal Two Batteries', originTwoBatteryStatistics);
 
     printStatsComparison('Powershop - No to One Battery', powershopNoBatteryStatistics, powershopOneBatteryStatistics);
     printStatsComparison('Powershop - No to Two Battery', powershopNoBatteryStatistics, powershopTwoBatteryStatistics);
@@ -479,6 +536,12 @@ function main() {
     printStatsComparison('Powershop No Battery - Red Saver One Battery', powershopNoBatteryStatistics, redSaverOneBatteryStatistics);
     printStatsComparison('Powershop One Battery - Red Saver One Battery', powershopOneBatteryStatistics, redSaverOneBatteryStatistics);
     printStatsComparison('Red Saver One Battery - Red Saver Two Battery', redSaverOneBatteryStatistics, redSaverTwoBatteryStatistics);
+
+    printStatsComparison('Powershop No Battery - Alinta One Battery', powershopNoBatteryStatistics, alintaOneBatteryStatistics);
+    printStatsComparison('Alinta One Battery - Alinta Two Battery', alintaOneBatteryStatistics, alintaTwoBatteryStatistics);
+
+    printStatsComparison('Powershop No Battery - Origin One Battery', powershopNoBatteryStatistics, originOneBatteryStatistics);
+    printStatsComparison('Origin One Battery - Origin Two Battery', originOneBatteryStatistics, originTwoBatteryStatistics);
 
     // Scenarios to simulate
     // No battery (current state)

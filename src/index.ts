@@ -171,15 +171,31 @@ function simulateEntry(entry: MeterEntry, initialBatteryCharge: number, maxBatte
       const windowIndex = calIndex({ hour, minute });
 
       const window = result.timeWindows[windowIndex];
-      const { updatedChargePostGen, updatedGeneration } = addGeneration({ currentBatteryCharge, maxBatterySize, generation: window.generation });
-      const { updatedChargePostCons, updatedConsumption } = removeConsumption({ currentBatteryCharge: updatedChargePostGen, consumption: window.consumption });
 
-      currentBatteryCharge = updatedChargePostCons;
+      const genThenConsume = false;
+      let finalGeneration: number = 0, finalConsumption: number = 0, finalBattery: number = 0;
+      if (genThenConsume) {
+        const { updatedChargePostGen, updatedGeneration } = addGeneration({ currentBatteryCharge, maxBatterySize, generation: window.generation });
+        const { updatedChargePostCons, updatedConsumption } = removeConsumption({ currentBatteryCharge: updatedChargePostGen, consumption: window.consumption });
+
+        finalGeneration = updatedGeneration;
+        finalConsumption = updatedConsumption;
+        finalBattery = updatedChargePostCons;
+      } else {
+        const { updatedChargePostCons, updatedConsumption } = removeConsumption({ currentBatteryCharge, consumption: window.consumption });
+        const { updatedChargePostGen, updatedGeneration } = addGeneration({ currentBatteryCharge: updatedChargePostCons, maxBatterySize, generation: window.generation });
+
+        finalGeneration = updatedGeneration;
+        finalConsumption = updatedConsumption;
+        finalBattery = updatedChargePostGen;
+      }
+
+      currentBatteryCharge = finalBattery;
       result.timeWindows[windowIndex] = {
-        consumption: updatedConsumption,
-        generation: updatedGeneration,
-        batteryCharge: updatedChargePostCons,
-        atMaxCharge: updatedChargePostCons >= maxBatterySize - 0.005
+        consumption: finalConsumption,
+        generation: finalGeneration,
+        batteryCharge: finalBattery,
+        atMaxCharge: finalBattery >= maxBatterySize - 0.005
       };
     }
   }

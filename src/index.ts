@@ -143,7 +143,9 @@ function addGeneration(data: { currentBatteryCharge: number, maxBatterySize: num
   const {currentBatteryCharge, maxBatterySize, generation} = data;
 
   const uncharged = maxBatterySize - currentBatteryCharge;
-  const chargeToAdd = Math.min(uncharged, generation);
+  const MAX_POWERWALL_CHARGE_POWER_KW = 5;
+  const MAX_KWH_CHARGE_PER_30_MIN = MAX_POWERWALL_CHARGE_POWER_KW / 2;
+  const chargeToAdd = Math.min(MAX_KWH_CHARGE_PER_30_MIN, Math.min(uncharged, generation));
 
   return {
     updatedChargePostGen: currentBatteryCharge + chargeToAdd,
@@ -208,7 +210,7 @@ function simulateEntry(entry: MeterEntry, initialBatteryCharge: number, maxBatte
 }
 
 function simulateBattery(meterEntries: Array<MeterEntry>, settings: SimulationSettings): Array<MeterEntry> {
-  const batteryState: BatteryState = { currentCharge: 0 };
+  const batteryState: BatteryState = { currentCharge: POWERWALL_SIZE * 0.4 };
 
   return meterEntries.map(entry => {
     const newEntry = simulateEntry(entry, batteryState.currentCharge, settings.batterySize);
